@@ -1,360 +1,287 @@
-local root "" //Introduce here your path to the repository
-cd "`root'\Functional-Decline-ENRICA-BKMR"
+local root "C:\Users\a.santos\OneDrive - UAM\Escritorio\UAM_Sarcopenia\Functional-Decline-ENRICA-BKMR" //Introduce here your path to the repository
+cd "`root'\data"
 
-use "data/bd_metales_deteriorommii.dta", replace
+use "bd_metales_deteriorommii.dta", replace
 
-local matrix = "blood" //Select the desired matrix 
+//Prepare the correct variables
+capture gen gedad = edadw0
+quietly sum gedad
+local min = r(min)
+local max = r(max)
+recode gedad `min'/74=0 75/`max'=1
 
-if "`matrix'" == "serum"{
-	drop if w17IR_DEGREES==. | w17IR_DEGREES>=5 //We firstly drop patients with severe kidney chronic disease or missing as we cannot trust those measurements
-	drop if missing(Al, Co, Cr, Cu, Fe, Mg, Mn, Mo, Ni, Pb, Se, V, Zn)
-	drop if missing(w17sexo, edadw0, w17fuma, w17educa_3cat, w17imc3, w17cv, w17dai_hypertension, w17dai_diabetes)
-}
+capture gen fuma2 = w17fuma
+replace fuma2 = 1 if fuma2==2
 
-if "`matrix'" == "blood"{
-	drop if w17IR_DEGREES==. | w17IR_DEGREES>=5
-	drop if missing(Cd_imput, Hg_whb, Mn_whb, Pb_whb, Se_whb)
-	drop if missing(w17sexo, edadw0, w17fuma, w17educa_3cat, w17imc3, w17cv, w17dai_hypertension, w17dai_diabetes)
-}
+capture gen educa2 = w17educa_3cat
+replace educa2 = 1 if educa2==2
 
+capture gen medas2 = w17xmedas
+quietly sum medas2
+local min = r(min)
+local max = r(max)
+recode medas2 `min'/7=0 8/`max'=1
 
-//Here we spcifiy the desired outcome to be evaluated. In case of needing to check any other outcome, add the variable to study_outcome and a custom name to outcome_names in the same position
-local study_outcomes ewgsop2_perform_sppbw0 ///
-                     ewgsop2_perform_velw0 ///
-                     ewgsop2_strength_gripw0
-					 
-local outcome_names SPPB ///
-                     Gait_Speed ///
-                     Grip_Strength
+quietly sum w17modvigpa_mets, d
+local p50 = r(p50)
+capture gen pa2 = w17modvigpa_mets
+replace pa2 = 0 if pa2 < `p50'
+replace pa2 = 1 if pa2 >= `p50' & pa2!=.
 
-forvalues i = 1/3 {
-    
-    local study_outcome : word `i' of `study_outcomes'
-    local outcome_name : word `i' of `outcome_names'
-    
-    display "`outcome_name'"
-
+drop if missing(w17vis_enf) //No blood sample was extracted
+drop if missing(Al, Co, Cr, Cu, Fe, Mg, Mn, Mo, Ni, Pb, Se, V, Zn)
+drop if missing(w17sexo, edadw0, w17fuma, w17educa_3cat, w17imc3, alcohol4, w17xmedas, w17modvigpa_mets)
+drop if w17IR_DEGREES==. | w17IR_DEGREES>=5 //We drop patients with severe kidney chronic disease or missing as we cannot trust those measurements
 
 
-preserve
-drop if `study_outcome'==.
-	
 tempname tabla1
 
-postfile `tabla1' str28 Variables ///
-					str20 Total ///
-                    str20 High_`outcome_name' ///
-                    str20 Low_`outcome_name' ///
-					str8 P_value ///
+postfile `tabla1' str30 Variables ///
+					str12 N ///
+					str12 Al ///
+                    str10 Co ///
+                    str10 Cr ///
+					str12 Cu ///
+					str12 Fe ///
+					str13 Mg ///
+					str10 Mn ///
+					str10 Mo ///
+					str10 Ni ///
+					str10 Pb ///
+					str12 Se ///
+					str10 V ///
+					str12 Zn ///
                     using tabla1_temp.dta, replace
+					
 
-tab `study_outcome', matcell(freqs)
+//OVERALL
 count
-local total = r(N)
-local controls = freqs[1,1]
-local cases = freqs[2,1]
-local porc_control : di %2.1f `controls'/`total'*100
-local porc_caso : di %2.1f `cases'/`total'*100
-
-post `tabla1' ("") ("n=`total'") ("n=`controls' (`porc_control'%)") ("n=`cases' (`porc_caso'%)") ("")
-
-//Sexo
-tab w17sexo `study_outcome', chi2
-local p_val : di %4.3f r(p)
-if `p_val' == 0.000{
-	local p_val = "<0.001"
+local N_total = r(N)
+foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+	capture gen ln`var'=ln(`var')
+	quietly sum ln`var'
+	local gmean : di %2.1f exp(r(mean))
+	local gsd : di %2.1f exp(r(sd))
+	local `var'_stat = "`gmean' (`gsd')"
 }
 
-local parameter = "Gender, n(%)"
-
-post `tabla1' ("`parameter'") ("") ("") ("") ("`p_val'")
-
-local study_labels Male ///
-             Female
+post `tabla1' ("Overall") ("`N_total'") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
 
 
-forvalues i = 1/2{
-	tab w17sexo `study_outcome', col matcell(freqs)
-	local n_control = freqs[`i',1]
-	local n_caso = freqs[`i',2]
-	local n_total = `n_control' + `n_caso'
-	local porc_control : di %2.1f `n_control'/`controls' * 100
-	local porc_caso : di %2.1f `n_caso'/`cases' * 100
-	local porc_total : di %2.1f `n_total'/`total' * 100
+//AGE
+post `tabla1' ("Age (years)") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("")
+local tags <75 >=75
+
+forvalues k = 0/1{
+	local i = `k'+1
+	local tag : word `i' of `tags'
+	preserve
+	drop if gedad!=`k'
 	
-	local stat_control = "`n_control' (`porc_control'%)"
-	local stat_caso = "`n_caso' (`porc_caso'%)"
-	local stat_total = "`n_total' (`porc_total'%)"
+	count
+	local N = r(N)
+	local porc : di %2.1f `N'/`N_total'*100
 	
-	local parameter : word `i' of `study_labels'
-	local parameter = subinstr("`parameter'", "_", " ", .)
+	foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+		capture gen ln`var'=ln(`var')
+		quietly sum ln`var'
+		local gmean : di %2.1f exp(r(mean))
+		local gsd : di %2.1f exp(r(sd))
+		local `var'_stat = "`gmean' (`gsd')"
+	}
 
+	post `tabla1' ("`tag'") ("`N' (`porc'%)") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
 
-
-	
-	post `tabla1' ("`parameter'") ("`stat_total'") ("`stat_control'") ("`stat_caso'") ("")
-
+	restore
 }
 
-//Edad
-tabstat edadw0, stat(mean sd) save
-local mean_total : display %4.2f r(StatTotal)[1,1]
-local sd_total : display %4.2f r(StatTotal)[2,1]
-local stat_total = "`mean_total' (`sd_total')"
+//SEX
+post `tabla1' ("Sex") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("")
+local tags Male Female
 
-tabstat edadw0, by(`study_outcome') stat(mean sd) save
-local mean_control : di %4.2f r(Stat1)[1,1]
-local sd_control : di %4.2f r(Stat1)[2,1]
-local stat_control = "`mean_control' (`sd_control')"
+forvalues k = 0/1{
+	local i = `k'+1
+	local tag : word `i' of `tags'
+	preserve
+	drop if w17sexo!=`k'
+	
+	count
+	local N = r(N)
+	local porc : di %2.1f `N'/`N_total'*100
+	
+	foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+		capture gen ln`var'=ln(`var')
+		quietly sum ln`var'
+		local gmean : di %2.1f exp(r(mean))
+		local gsd : di %2.1f exp(r(sd))
+		local `var'_stat = "`gmean' (`gsd')"
+	}
 
-local mean_caso : di %4.2f r(Stat2)[1,1]
-local sd_caso : di %4.2f r(Stat2)[2,1]
-local stat_caso = "`mean_caso' (`sd_caso')"
+	post `tabla1' ("`tag'") ("`N' (`porc'%)") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
 
-ttest edadw0, by(`study_outcome')
-local p_val : di %4.3f r(p)
-if `p_val' == 0.000{
-	local p_val = "<0.001"
+	restore
 }
 
-local parameter = "Age (years) mean (sd)"
-post `tabla1' ("`parameter'") ("`stat_total'") ("`stat_control'") ("`stat_caso'") ("`p_val'")
+//SMOKING
+post `tabla1' ("Smoking") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("")
+local tags Never Ex-smoker Current
 
+forvalues k = 0/2{
+	local i = `k'+1
+	local tag : word `i' of `tags'
+	preserve
+	drop if w17fuma!=`k'
+	
+	count
+	local N = r(N)
+	local porc : di %2.1f `N'/`N_total'*100
+	
+	foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+		capture gen ln`var'=ln(`var')
+		quietly sum ln`var'
+		local gmean : di %2.1f exp(r(mean))
+		local gsd : di %2.1f exp(r(sd))
+		local `var'_stat = "`gmean' (`gsd')"
+	}
 
-//Nivel de estudios
-tab w17educa_3cat `study_outcome', chi2
-local p_val : di %4.3f r(p)
-if `p_val' == 0.000{
-	local p_val = "<0.001"
+	post `tabla1' ("`tag'") ("`N' (`porc'%)") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
+
+	restore
 }
 
-local parameter = "Education, n(%)"
+//EDUCATION LEVEL
+post `tabla1' ("Education level") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("")
+local tags <Secondary Secondary >Secondary
 
-post `tabla1' ("`parameter'") ("") ("") ("") ("`p_val'")
-
-local study_labels <Secundary ///
-             Secundary ///
-             >Secundary
-
-
-forvalues i = 1/3{
-	tab w17educa_3cat `study_outcome', col matcell(freqs)
-	local n_control = freqs[`i',1]
-	local n_caso = freqs[`i',2]
-	local n_total = `n_control' + `n_caso'
-	local porc_control : di %2.1f `n_control'/`controls' * 100
-	local porc_caso : di %2.1f `n_caso'/`cases' * 100
-	local porc_total : di %2.1f `n_total'/`total' * 100
+forvalues k = 0/2{
+	local i = `k'+1
+	local tag : word `i' of `tags'
+	preserve
+	drop if w17educa_3cat!=`k'
 	
-	local stat_control = "`n_control' (`porc_control'%)"
-	local stat_caso = "`n_caso' (`porc_caso'%)"
-	local stat_total = "`n_total' (`porc_total'%)"
+	count
+	local N = r(N)
+	local porc : di %2.1f `N'/`N_total'*100
 	
-	local parameter : word `i' of `study_labels'
-	local parameter = subinstr("`parameter'", "_", " ", .)
+	foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+		capture gen ln`var'=ln(`var')
+		quietly sum ln`var'
+		local gmean : di %2.1f exp(r(mean))
+		local gsd : di %2.1f exp(r(sd))
+		local `var'_stat = "`gmean' (`gsd')"
+	}
 
+	post `tabla1' ("`tag'") ("`N' (`porc'%)") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
 
-
-	
-	post `tabla1' ("`parameter'") ("`stat_total'") ("`stat_control'") ("`stat_caso'") ("")
-
+	restore
 }
 
 //BMI
-tab w17imc3 `study_outcome', chi2
-local p_val : di %4.3f r(p)
-if `p_val' == 0.000{
-	local p_val = "<0.001"
+post `tabla1' ("BMI (Kg/m2)") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("")
+local tags <25 25-30 >=30
+
+forvalues k = 0/2{
+	local i = `k'+1
+	local tag : word `i' of `tags'
+	preserve
+	drop if w17imc3!=`k'
+	
+	count
+	local N = r(N)
+	local porc : di %2.1f `N'/`N_total'*100
+	
+	foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+		capture gen ln`var'=ln(`var')
+		quietly sum ln`var'
+		local gmean : di %2.1f exp(r(mean))
+		local gsd : di %2.1f exp(r(sd))
+		local `var'_stat = "`gmean' (`gsd')"
+	}
+
+	post `tabla1' ("`tag'") ("`N' (`porc'%)") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
+
+	restore
 }
 
-local parameter = "BMI, n(%)"
+//ALCOHOL
+post `tabla1' ("Drinking status") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("")
+local tags Never_drinker Moderate_drinker Heavy_drinker Ex_drinker
 
-post `tabla1' ("`parameter'") ("") ("") ("") ("`p_val'")
-
-local study_labels <25 ///
-             25-30 ///
-             >=30
-
-
-forvalues i = 1/3{
-	tab w17imc3 `study_outcome', col matcell(freqs)
-	local n_control = freqs[`i',1]
-	local n_caso = freqs[`i',2]
-	local n_total = `n_control' + `n_caso'
-	local porc_control : di %2.1f `n_control'/`controls' * 100
-	local porc_caso : di %2.1f `n_caso'/`cases' * 100
-	local porc_total : di %2.1f `n_total'/`total' * 100
+forvalues k = 0/3{
+	local i = `k'+1
+	local tag : word `i' of `tags'
+	preserve
+	drop if alcohol4!=`k'
 	
-	local stat_control = "`n_control' (`porc_control'%)"
-	local stat_caso = "`n_caso' (`porc_caso'%)"
-	local stat_total = "`n_total' (`porc_total'%)"
+	count
+	local N = r(N)
+	local porc : di %2.1f `N'/`N_total'*100
 	
-	local parameter : word `i' of `study_labels'
-	local parameter = subinstr("`parameter'", "_", " ", .)
+	foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+		capture gen ln`var'=ln(`var')
+		quietly sum ln`var'
+		local gmean : di %2.1f exp(r(mean))
+		local gsd : di %2.1f exp(r(sd))
+		local `var'_stat = "`gmean' (`gsd')"
+	}
 
+	post `tabla1' ("`tag'") ("`N' (`porc'%)") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
 
-
-	
-	post `tabla1' ("`parameter'") ("`stat_total'") ("`stat_control'") ("`stat_caso'") ("")
-
+	restore
 }
 
-//Smoking
-tab w17fuma `study_outcome', chi2
-local p_val : di %4.3f r(p)
-if `p_val' == 0.000{
-	local p_val = "<0.001"
+//DIET
+post `tabla1' ("MEDAS score (quartiles)") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("")
+local tags Q1 Q2 Q3 Q4	
+
+forvalues k = 1/4{
+	local tag : word `k' of `tags'
+	preserve
+	drop if medas4!=`k'
+	
+	count
+	local N = r(N)
+	local porc : di %2.1f `N'/`N_total'*100
+	
+	foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+		capture gen ln`var'=ln(`var')
+		quietly sum ln`var'
+		local gmean : di %2.1f exp(r(mean))
+		local gsd : di %2.1f exp(r(sd))
+		local `var'_stat = "`gmean' (`gsd')"
+	}
+
+	post `tabla1' ("`tag'") ("`N' (`porc'%)") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
+
+	restore
 }
 
-local parameter = "Smoking status, n(%)"
+//PHYSICAL ACTIVITY
+post `tabla1' ("Physical activity (METs-h/wk quartiles") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("") ("")
+local tags Q1 Q2 Q3 Q4	
 
-post `tabla1' ("`parameter'") ("") ("") ("") ("`p_val'")
-
-local study_labels Never ///
-             Ex-smoker ///
-             Current
-
-
-forvalues i = 1/3{
-	tab w17fuma `study_outcome', col matcell(freqs)
-	local n_control = freqs[`i',1]
-	local n_caso = freqs[`i',2]
-	local n_total = `n_control' + `n_caso'
-	local porc_control : di %2.1f `n_control'/`controls' * 100
-	local porc_caso : di %2.1f `n_caso'/`cases' * 100
-	local porc_total : di %2.1f `n_total'/`total' * 100
+forvalues k = 1/4{
+	local tag : word `k' of `tags'
+	preserve
+	drop if pa4!=`k'
 	
-	local stat_control = "`n_control' (`porc_control'%)"
-	local stat_caso = "`n_caso' (`porc_caso'%)"
-	local stat_total = "`n_total' (`porc_total'%)"
+	count
+	local N = r(N)
+	local porc : di %2.1f `N'/`N_total'*100
 	
-	local parameter : word `i' of `study_labels'
-	local parameter = subinstr("`parameter'", "_", " ", .)
+	foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn{
+		capture gen ln`var'=ln(`var')
+		quietly sum ln`var'
+		local gmean : di %2.1f exp(r(mean))
+		local gsd : di %2.1f exp(r(sd))
+		local `var'_stat = "`gmean' (`gsd')"
+	}
 
+	post `tabla1' ("`tag'") ("`N' (`porc'%)") ("`Al_stat'") ("`Co_stat'") ("`Cr_stat'") ("`Cu_stat'") ("`Fe_stat'") ("`Mg_stat'") ("`Mn_stat'") ("`Mo_stat'") ("`Ni_stat'") ("`Pb_stat'") ("`Se_stat'") ("`V_stat'") ("`Zn_stat'")
 
-
-	
-	post `tabla1' ("`parameter'") ("`stat_total'") ("`stat_control'") ("`stat_caso'") ("")
-
+	restore
 }
 
-//Enfermedad cardiovascular
-tab w17cv `study_outcome', chi2
-local p_val : di %4.3f r(p)
-if `p_val' == 0.000{
-	local p_val = "<0.001"
-}
-
-local parameter = "Cardiovascular disease, n(%)"
-
-post `tabla1' ("`parameter'") ("") ("") ("") ("`p_val'")
-
-local study_labels No ///
-             Yes
-
-
-forvalues i = 1/2{
-	tab w17cv `study_outcome', col matcell(freqs)
-	local n_control = freqs[`i',1]
-	local n_caso = freqs[`i',2]
-	local n_total = `n_control' + `n_caso'
-	local porc_control : di %2.1f `n_control'/`controls' * 100
-	local porc_caso : di %2.1f `n_caso'/`cases' * 100
-	local porc_total : di %2.1f `n_total'/`total' * 100
-	
-	local stat_control = "`n_control' (`porc_control'%)"
-	local stat_caso = "`n_caso' (`porc_caso'%)"
-	local stat_total = "`n_total' (`porc_total'%)"
-	
-	local parameter : word `i' of `study_labels'
-	local parameter = subinstr("`parameter'", "_", " ", .)
-
-
-
-	
-	post `tabla1' ("`parameter'") ("`stat_total'") ("`stat_control'") ("`stat_caso'") ("")
-
-}
-
-//Diabetes mellitus
-tab w17dai_diabetes `study_outcome', chi2
-local p_val : di %4.3f r(p)
-if `p_val' == 0.000{
-	local p_val = "<0.001"
-}
-
-local parameter = "Diabetes mellitus, n(%)"
-
-post `tabla1' ("`parameter'") ("") ("") ("") ("`p_val'")
-
-local study_labels No ///
-             Yes
-
-
-forvalues i = 1/2{
-	tab w17dai_diabetes `study_outcome', col matcell(freqs)
-	local n_control = freqs[`i',1]
-	local n_caso = freqs[`i',2]
-	local n_total = `n_control' + `n_caso'
-	local porc_control : di %2.1f `n_control'/`controls' * 100
-	local porc_caso : di %2.1f `n_caso'/`cases' * 100
-	local porc_total : di %2.1f `n_total'/`total' * 100
-	
-	local stat_control = "`n_control' (`porc_control'%)"
-	local stat_caso = "`n_caso' (`porc_caso'%)"
-	local stat_total = "`n_total' (`porc_total'%)"
-	
-	local parameter : word `i' of `study_labels'
-	local parameter = subinstr("`parameter'", "_", " ", .)
-
-
-
-	
-	post `tabla1' ("`parameter'") ("`stat_total'") ("`stat_control'") ("`stat_caso'") ("")
-
-}
-
-
-//Hipertensión
-tab w17dai_hypertension `study_outcome', chi2
-local p_val : di %4.3f r(p)
-if `p_val' == 0.000{
-	local p_val = "<0.001"
-}
-
-local parameter = "Hypertension, n(%)"
-
-post `tabla1' ("`parameter'") ("") ("") ("") ("`p_val'")
-
-local study_labels No ///
-             Yes
-
-
-forvalues i = 1/2{
-	tab w17dai_hypertension `study_outcome', col matcell(freqs)
-	local n_control = freqs[`i',1]
-	local n_caso = freqs[`i',2]
-	local n_total = `n_control' + `n_caso'
-	local porc_control : di %2.1f `n_control'/`controls' * 100
-	local porc_caso : di %2.1f `n_caso'/`cases' * 100
-	local porc_total : di %2.1f `n_total'/`total' * 100
-	
-	local stat_control = "`n_control' (`porc_control'%)"
-	local stat_caso = "`n_caso' (`porc_caso'%)"
-	local stat_total = "`n_total' (`porc_total'%)"
-	
-	local parameter : word `i' of `study_labels'
-	local parameter = subinstr("`parameter'", "_", " ", .)
-
-
-
-	
-	post `tabla1' ("`parameter'") ("`stat_total'") ("`stat_control'") ("`stat_caso'") ("")
-
-}
-
-
-restore
 
 postclose `tabla1'
 
@@ -362,11 +289,7 @@ preserve
 
 use tabla1_temp.dta, clear
 
-list
-
-asdoc list, title(Tabla 1 `outcome_name'_`matrix') save(tables/tabla1_`outcome_name'_`matrix'.doc) replace
+asdoc list, title(Table 1) save(../tables/table1.doc) replace
 
 restore
 shell del "tabla1_temp.dta"
-
-}

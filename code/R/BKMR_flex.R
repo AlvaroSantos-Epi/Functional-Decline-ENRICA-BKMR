@@ -13,34 +13,27 @@ library(Hmisc)
 library(fastDummies)
 library(stringr)
 
-root <- "" #Introduce here your path to the repository
-setwd(paste0(root, "\Functional-Decline-ENRICA-BKMR"))
+path <- rstudioapi::getSourceEditorContext()$path #Introduce here your path to the repository
+setwd(gsub("/code/BKMR_flex.R", "", path))
 
 enrica <- read.csv("data/enrica_metales_sarcopenia.csv")
 
-
+##Here we load lists with the outcomes, metal groups and covariate models, below you will find variables to specify your desired analysis
 outcomes <- list(
   sppb = "ewgsop2_perform_sppbw0",
   vel = "ewgsop2_perform_velw0",
-  grip = "ewgsop2_strength_gripw0"
+  grip = "ewgsop2_strength_gripw0",
+  chair = "ewgsop2_strength_chairw0",
+  calf = "calfcircumf_dicotw0",
+  sarcopenia = "sarcopenia4"
 )
-
-##In outcome_name, write one of the values in outcomes. If any other outcome were wanted to be analysed, add it to the list
-outcome_name <- "sppb"
-outcome <- outcomes[[outcome_name]]
-
-if (class(enrica[[outcome]]) == "integer" && length(unique(na.omit(enrica[[outcome]]))) == 2){
-  outcome_type="binomial"
-} else{
-  outcome_type="gaussian"
-}
 
 metal_groups <- list(
   serum = list(
     ALL = c("Al", "Co", "Cr", "Cu", "Fe", "Mg", "Mn", "Mo", "Ni", "Pb", "Se", "V", "Zn"),
     ESSENTIAL = c("Ni", "Co", "Fe", "Mg", "Mn", "Mo", "Se", "V", "Zn"),
     TOXIC = c("Al", "Pb", "Cu", "Cr")
-    ),
+  ),
   blood = list(
     ALL = c("Cd", "Hg_whb", "Mn_whb", "Pb_whb", "Se_whb"),
     ESSENTIAL = c("Mn_whb","Se_whb"),
@@ -48,35 +41,52 @@ metal_groups <- list(
   )
 )
 
+model_covars <- list(
+  model1 = c('w17sexo','edadw0','w17fuma', 'w17educa_3cat', 'w17imc3'),
+  model2 = c('w17sexo','edadw0','w17fuma', 'w17educa_3cat', 'w17imc3', 'w17dai_hypertension', 'w17dai_diabetes', 'w17cv'),
+  model3 = c('w17sexo','edadw0', 'w17fuma', 'w17educa_3cat', 'w17imc3', 'medas4', 'pa4', 'alcohol4')
+)
+
+##In outcome_name, write one of the values in outcomes. If any other outcome were wanted to be analysed, add it to the list
+outcome_name <- "calf"
+outcome <- outcomes[[outcome_name]]
+
 ##Write a matrix (serum or blood) and a group of metals to be used as mix (ALL, ESSENTIAL or TOXIC)
 ## --> Note that bivariate analyses will give error for blood essential group, as it only has 2 metals while 3 are required
 matrix <- "serum"
-group <- "TOXIC"
-
+group <- "ESSENTIAL"
 metals <- metal_groups[[matrix]][[group]]
 
-
-model_covars <- list(
-  model1 = c('w17sexo','edadw0','w17fuma', 'w17educa_3cat', 'w17imc3'),
-  model2 = c('w17sexo','edadw0', 'w17fuma', 'w17educa_3cat', 'w17imc3', 'w17cv', 'w17dai_hypertension', 'w17dai_diabetes')
-)
-
 ##Select the model to be runned, model1 includes main covariates while model2 includes comorbilities.
-model = "model1"
-
+model = "model3"
 covariates <- model_covars[[model]]
 
+
+##This automatically stablishes whether your outcome is binomial or continous
+if (class(enrica[[outcome]]) == "integer" && length(unique(na.omit(enrica[[outcome]]))) == 2){
+  outcome_type="binomial"
+} else{
+  outcome_type="gaussian"
+}
+
+##Selection criteria and shows how many participants are dropped
 check_dels <- function(x, n){
   new_n <- nrow(x)
   dels <- n-new_n
-  print(paste("Se han eliminado", dels, "NAs", sep=" "))
+  print(paste(dels, "NAs have been dropped", sep=" "))
   return(new_n)
 }
 n <- nrow(enrica)
-enrica <- subset(enrica, !is.na(w17IR_DEGREES) & w17IR_DEGREES<5); n <- check_dels(enrica, n)
+#Sin exploración física
+enrica <- enrica[complete.cases(enrica[, unlist(outcomes)]), ]; n <- check_dels(enrica, n)
+#Sin visita de enfermera (sin extracción de sangre)
+enrica <- enrica[complete.cases(enrica[, "w17vis_enf"]), ]; n <- check_dels(enrica, n)
+#Sin datos de algún metal
 enrica <- enrica[complete.cases(enrica[metal_groups[[matrix]][["ALL"]]]), ]; n <- check_dels(enrica, n)
-enrica <- enrica[complete.cases(enrica[model_covars[["model1"]]]), ]; n <- check_dels(enrica, n)
-enrica <- enrica[complete.cases(enrica[outcome]), ]; n <- check_dels(enrica, n)
+#Sin datos de alguna coviariables
+enrica <- enrica[complete.cases(enrica[model_covars[[model]]]), ]; n <- check_dels(enrica, n)
+#Enfermedad renal crónica severa o missing
+enrica <- subset(enrica, !is.na(w17IR_DEGREES) & w17IR_DEGREES<5); n <- check_dels(enrica, n)
 
 
 enrica <- enrica %>%
@@ -86,17 +96,8 @@ enrica <- enrica %>%
 
 
 
-#Splines are calculated for age
-knots_age <- quantile(enrica$edadw0, probs = c(0.05, 0.50, 0.95), na.rm = TRUE)
 
-age_rcs <- rcspline.eval(enrica$edadw0,
-                       knots = knots_age,
-                       inclx = FALSE)
-
-covariates[covariates == "edadw0"] <- "age_rcs"
-
-enrica$age_rcs <- as.vector(age_rcs)
-
+##We generate an empty matrix to which we will be adding the covariates
 covs_matrix <- matrix(nrow = nrow(enrica), ncol = 0)
 
 ##BKMR needs continious variables scaled and multicotomic ones as dummies, this loop prepares the covariates
@@ -137,12 +138,12 @@ lnmixture_z <- lnmixture %>%
 rm(list = setdiff(ls(), c("matrix","group","model","outcome","outcome_name", "outcome_type", "enrica", "covs_matrix", "lnmixture_z")))
 
 ####Generate the matrix of knots representative of the n dimensional space where n = number of exposures
-set.seed(10)
-knots=50
-knots50 <- fields::cover.design(lnmixture_z, nd = knots)$design
+set.seed(1000)
+knots=75
+knots_name = paste0("knots", knots)
+assign(knots_name, fields::cover.design(lnmixture_z, nd = knots)$design)
 
-save(knots50, file=paste0("knots/",group,"_ENRICA_",outcome_name,"_knots50.RData"))
-
+save(list = knots_name, file=paste0("knots/",group,"_ENRICA_",outcome_name,"_knots",knots,".RData"))
 
 ################################################
 ###         Fit Models                       ###
@@ -153,22 +154,23 @@ save(knots50, file=paste0("knots/",group,"_ENRICA_",outcome_name,"_knots50.RData
 
 set.seed(1000)
 
-iter = 10000
-fit_vs_knots50 <-  kmbayes(y=enrica[[outcome]], Z=lnmixture_z, X=covs_matrix, iter=iter, verbose=TRUE, varsel=TRUE, est.h = TRUE,
-                           knots=knots50,
-                           family=outcome_type)
+iter = 50000
+fit_name <- paste0("fit_vs_",knots,"knots","_",iter,"iter")
+assign(fit_name,kmbayes(y=enrica[[outcome]], Z=lnmixture_z, X=covs_matrix, iter=iter, verbose=TRUE, varsel=TRUE, est.h = TRUE,
+                           knots=get(knots_name),
+                           family=outcome_type))
 
-save(fit_vs_knots50, file=paste(paste0("fit_models/",matrix,"/",group),"BKMR_ENRICA",outcome_name, model,paste0("vs_knots",knots,".RData"), sep = "_"))
-summary(fit_vs_knots50)
+file_name <- paste(paste0("fit_models/",matrix,"/",group),"BKMR_ENRICA",outcome_name, model,paste0("vs_knots",knots,"_iter", iter,".RData"), sep = "_")
+save(list = fit_name, file=file_name)
 
 
-
-load(paste(paste0("fit_models/",matrix,"/",group),"BKMR_ENRICA",outcome_name, model,paste0("vs_knots",knots,".RData"), sep = "_"))
+load(file_name)
+summary(get(fit_name))
 
 
 
 ###Names to standarize procedure
-modeltoplot      <- fit_vs_knots50   ##Name of model object
+modeltoplot      <- get(fit_name)   ##Name of model object
 modeltoplot.name <- paste(outcome_name, model, group, paste0("fit_vs_knots",knots), sep = "_") ##Name of model for saving purposes
 plot.name        <- paste(outcome_name, model, group, paste0("vs_knots",knots), sep = "_")     ##Part that changed in plot name 
 
@@ -216,48 +218,90 @@ load(paste0("saved_model/",matrix,"/", modeltoplot.name,"_plots.RData"))
 ###        PLOTS                           ###
 ##############################################
 
+###Function to later obtain y-axis labels
+getrange <- function(x, effect_col, error_col) {
+  
+  model.name <- deparse(substitute(x))
+  
+  if (model.name!= "pred.resp.bivar.levels"){
+    upper_bound <- x[[effect_col]] + (1.96 * x[[error_col]])
+    lower_bound <- x[[effect_col]] - (1.96 * x[[error_col]])
+    
+    max_val <- max(abs(c(upper_bound, lower_bound)), na.rm = TRUE)
+    limit <- ceiling(max_val * 10) / 10
+  }
+  
+  else {  #We apply a different logic for bivariate as no CI are shown and there is a need to save space
+    upper_bound <- x[[effect_col]] 
+    lower_bound <- x[[effect_col]]
+    
+    limit <- max(abs(c(upper_bound, lower_bound)), na.rm = TRUE)
+  }
+  
+  return(c(-limit, limit))
+}
+
 ### Correlation matrix
 cor.Z <- cor(lnmixture_z, use="complete.obs")
 corrplot.mixed(cor.Z, upper = "ellipse", lower.col="black")
 
-
-#Save PDF with the relevant plots and PIPs
-pdf(paste(paste0("plots/",matrix,"/", group), "BKMR_ENRICA", outcome_name, model, ".pdf", sep = "_"))
-
 #For appropiate titles
 markers <- list(
-  sppb = "SPPB",
-  grip = "Grip Strength",
-  vel = "Gait Speed"
+  grip = "low grip strength",
+  chair = "low chair stand performance",
+  calf = "low calf circumference",
+  sppb = "low SPPB score",
+  vel = "low gait speed",
+  sarcopenia = "sarcopenia"
+  
 )
-marker <- markers[[strsplit(outcome_name, "w")[[1]][1]]]
-wave <- paste0("wave ",strsplit(outcome_name, "w")[[1]][2]) #If longitudinal studies were carried out
+
+marker <- markers[[outcome_name]]
+
 
 pips <- ExtractPIPs(modeltoplot); colnames(pips)[1] <- "Metal"
 
+write.csv(pips, file= paste0("tables/pips/", paste(matrix, group, outcome_name, model, sep="_"), ".csv"), row.names = FALSE)
+
 #Table with PIPs
-ggtexttable(pips, rows = NULL,
+pips <- ggtexttable(pips, rows = NULL,
             theme = ttheme(base_size = 25)) %>%
   annotate_figure(
     top = text_grob(
-      paste("Posterior Inclusion Probabilities (PIPs) for", str_to_lower(group), matrix, "metals on low",
+      paste("Posterior Inclusion Probabilities (PIPs) for", str_to_lower(group), matrix, "metals on",
             marker), size = 14))
 
+ggsave(paste("figures/pips",outcome_name, matrix, group, paste0(model,".png"),sep="_"), plot = pips,  width = 8, height = 6, dpi = 300)
 
-TracePlot(fit = modeltoplot, par = "beta", sel = sel, ylab = expression(beta))
 
 ########## UNIVARIATE ##########
-pred.resp.univar %>% 
-  ggplot(aes(z, est, ymin = est - 1.96*se, ymax = est + 1.96*se)) + 
+range <- getrange(pred.resp.univar, effect_col = "est", error_col = "se")
+
+univariate <- pred.resp.univar %>% 
+  ggplot(aes(z, est, ymin = est - 1.96*se, ymax = est + 1.96*se)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgray", linewidth = 0.5) +
   geom_smooth(stat = "identity") + labs(y = "Effect Estimate", x = "Z-score log-transformed serum metal concentrations") + 
   facet_wrap(~ variable) + theme_bw() +
   theme(strip.background = element_rect(fill = "white")) +
-  ggtitle(paste("Cross-sectional association between", str_to_lower(group), matrix, "metals and low", marker, sep = " "))
+  scale_y_continuous(
+    limits = c(range[1], range[2]),
+    breaks = seq(range[1], range[2], length.out = 5),
+    labels = function(x) sprintf("%.2f", x)
+  ) +
+  ggtitle(paste("Cross-sectional association between", str_to_lower(group), matrix, "metals and", marker, sep = " "))
+
+#univariate
+
+ggsave(paste("figures/univariate",outcome_name, matrix, group, paste0(model,".png"),sep="_"), plot = univariate,  width = 8, height = 6, dpi = 300)
 
 ########## BIVARIATE ##########
-pred.resp.bivar.levels %>% 
+range <- getrange(pred.resp.bivar.levels, effect_col = "est", error_col = "se")
+
+bivariate <- pred.resp.bivar.levels %>% 
   ggplot(aes(z1, est)) + 
   geom_smooth(aes(color = quantile), stat = "identity", linewidth = 0.5) +
+  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgray", linewidth = 0.5) +
   
   scale_color_manual(
     values = c(
@@ -285,11 +329,12 @@ pred.resp.bivar.levels %>%
   ) +
 
   scale_y_continuous(
-    limits = c(-0.8, 0.8), #Increase these limits is effects do not fit
-    breaks = c(-0.5, 0, 0.5)
+    limits = c(range[1], range[2]),
+    breaks = seq(floor((range[1]*0.6)*10)/10, ceiling((range[2]*0.6)*10)/10, length.out = 3),
+    labels = function(x) sprintf("%.2f", x)
   ) +
   
-  ggtitle(paste0("Low ",marker,": h(Metal1 | quantiles of Metal2)")) +
+  ggtitle(paste0(str_to_sentence(marker),": h(Metal1 | quantiles of Metal2)")) +
   
   xlab("Z-score log-transformed serum Metal1 concentrations") + 
   ylab("Effect Estimate") +
@@ -309,23 +354,43 @@ pred.resp.bivar.levels %>%
     plot.margin = margin(5, 5, 5, 5)
   )
 
+#bivariate
+
+ggsave(paste("figures/bivariate",outcome_name, matrix, group, paste0(model,".png"),sep="_"), plot = bivariate,  width = 8, height = 6, dpi = 300)
 
 ########## RISK OVERALL ##########
-ggplot(risks.overall, aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) + 
-  geom_hline(yintercept = 00, linetype = "dashed", color = "gray") + 
-  geom_pointrange() + theme_bw() +
-  labs(x = "Mixture quantile", y = "Overall effect estimate") +
-  ggtitle(paste(str_to_title(group), matrix, "Metals mixture overall effect on low",marker, sep = " "))
+range <- getrange(risks.overall, effect_col = "est", error_col = "sd")
 
+overall <- ggplot(risks.overall, aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgray", linewidth = 0.5) +
+  geom_pointrange() + theme_bw() +
+  scale_y_continuous(
+    limits = c(range[1], range[2]),
+    breaks = seq(range[1], range[2], length.out = 5),
+    labels = function(x) sprintf("%.2f", x)
+  ) +
+  labs(x = "Mixture quantile", y = "Overall effect estimate") +
+  ggtitle(paste(str_to_title(group), matrix, "Metals mixture overall effect on",marker, sep = " "))
+
+#overall
+
+ggsave(paste("figures/overall",outcome_name, matrix, group, paste0(model,".png"),sep="_"), plot = overall,  width = 8, height = 6, dpi = 300)
 
 ########## RISK SINGLE VARIABLE ##########
-risks.singvar %>% 
+range <- getrange(risks.singvar, effect_col = "est", error_col = "sd")
+
+singvar <- risks.singvar %>% 
   ggplot(aes(variable, est, ymin = est - 1.96*sd,  ymax = est + 1.96*sd, col = q.fixed)) + 
-  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "gray") +  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgray", linewidth = 0.5) +
   geom_pointrange(position = position_dodge(width = 0.75)) +  coord_flip() + 
   theme_bw() +
+  scale_y_continuous(
+    limits = c(range[1], range[2]),
+    breaks = seq(range[1], range[2], length.out = 5),
+    labels = function(x) sprintf("%.2f", x)
+  ) +
   labs(x = "", y = "Effect estimate per IQR increase", col = "Fixed Quantile")+
-  ggtitle(paste("Conditional estimates across quantiles of", str_to_lower(group), matrix, "metals on low",marker, sep = " ")) +
+  ggtitle(paste("Conditional estimates across quantiles of", str_to_lower(group), matrix, "metals on",marker, sep = " ")) +
   scale_color_manual(
     values = c(
       "0.25" = "#619cff",
@@ -337,17 +402,41 @@ risks.singvar %>%
   theme(
     plot.title = element_text(size = 11))
 
+#singvar
 
+ggsave(paste("figures/singvar",outcome_name, matrix, group, paste0(model,".png"),sep="_"), plot = singvar,  width = 8, height = 6, dpi = 300)
 
 ########## RISK INTERACTION ##########
-risks.int %>% 
+range <- getrange(risks.int, effect_col = "est", error_col = "sd")
+
+int <- risks.int %>% 
   ggplot(aes(variable, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) + 
   geom_pointrange(position = position_dodge(width = 0.75)) + 
-  geom_hline(yintercept = 0, lty = 2, col = "gray") + coord_flip() + theme_bw() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgray", linewidth = 0.5) + coord_flip() + theme_bw() +
+  scale_y_continuous(
+    limits = c(range[1], range[2]),
+    breaks = seq(range[1], range[2], length.out = 5),
+    labels = function(x) sprintf("%.2f", x)
+  ) +
   labs(x = "", y = "Difference in effect estimate per IQR increase (mixture fixed at P75 - P25)") +
-  ggtitle(paste("Difference in", str_to_lower(group), matrix, "metals effects estimate on low",marker, "between mixture fixed at P25 and P75", sep = " ")) +
+  ggtitle(paste("Difference in", str_to_lower(group), matrix, "metals effects estimate on",marker, "between mixture fixed at P25 and P75", sep = " ")) +
   theme(
     plot.title = element_text(size = 9))
 
+#int
+
+ggsave(paste("figures/interaction",outcome_name, matrix, group, paste0(model,".png"),sep="_"), plot = int,  width = 8, height = 6, dpi = 300)
+
+
+#Save PDF with the relevant plots and PIPs
+pdf(paste(paste0("plots/",matrix,"/", group), "BKMR_ENRICA", outcome_name, model, ".pdf", sep = "_"))
+
+pips
+TracePlot(fit = modeltoplot, par = "beta", sel = sel, ylab = expression(beta))
+univariate
+bivariate
+overall
+singvar
+int
+
 dev.off()
-  
