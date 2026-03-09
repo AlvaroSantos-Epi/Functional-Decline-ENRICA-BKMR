@@ -104,9 +104,10 @@ Department of Preventive Medicine and Public Health and Microbiology, Universida
 
 
 
-📚 If you use this repository or part of its code, please cite:
+## 📚 Citation
+If you use this repository or part of its code, please cite:
 
-Santos-Cuerva A, García-Esquinas E. Trace element mixtures and functional decline markers related to sarcopenia among older adults: a Bayesian kernel machine regression study in the ENRICA cohort. 2026.
-
-
+Santos-Cuerva A, et al. Trace element mixtures and functional decline markers
+related to sarcopenia among older adults: a Bayesian kernel machine regression
+study in the ENRICA cohort. 2026. *(under review)*
 
