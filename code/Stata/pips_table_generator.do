@@ -1,7 +1,6 @@
 local root "C:\Users\a.santos\OneDrive - UAM\Escritorio\UAM_Sarcopenia\Functional-Decline-ENRICA-BKMR" //Introduce here your path to the repository
 cd "`root'\tables\pips"
 
-*NOTE: This script is prepared for the specific metal mixture employed in Santos-Cuerva & García-Esquinas (2026). If a different mixture is willed to be analyzed, modify postfile length (rows 19-33) with appropiate names and every post line.
 
 local model = "model1" //State here for which model you want to generate your PIPs table
 

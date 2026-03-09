@@ -13,7 +13,7 @@ library(Hmisc)
 library(fastDummies)
 library(stringr)
 
-path <- rstudioapi::getSourceEditorContext()$path #Introduce here your path to the repository
+path <- rstudioapi::getSourceEditorContext()$path
 setwd(gsub("/code/BKMR_flex.R", "", path))
 
 enrica <- read.csv("data/enrica_metales_sarcopenia.csv")
@@ -32,7 +32,9 @@ metal_groups <- list(
   serum = list(
     ALL = c("Al", "Co", "Cr", "Cu", "Fe", "Mg", "Mn", "Mo", "Ni", "Pb", "Se", "V", "Zn"),
     ESSENTIAL = c("Ni", "Co", "Fe", "Mg", "Mn", "Mo", "Se", "V", "Zn"),
-    TOXIC = c("Al", "Pb", "Cu", "Cr")
+    ESSENTIAL2 = c("Ni", "Co", "Mg", "Mn", "Mo", "Se", "V", "Zn"),
+    TOXIC = c("Al", "Pb", "Cu", "Cr"),
+    TOXIC2 = c("Al", "Fe", "Pb", "Cu", "Cr")
   ),
   blood = list(
     ALL = c("Cd", "Hg_whb", "Mn_whb", "Pb_whb", "Se_whb"),
@@ -48,13 +50,13 @@ model_covars <- list(
 )
 
 ##In outcome_name, write one of the values in outcomes. If any other outcome were wanted to be analysed, add it to the list
-outcome_name <- "calf"
+outcome_name <- "chair"
 outcome <- outcomes[[outcome_name]]
 
 ##Write a matrix (serum or blood) and a group of metals to be used as mix (ALL, ESSENTIAL or TOXIC)
 ## --> Note that bivariate analyses will give error for blood essential group, as it only has 2 metals while 3 are required
 matrix <- "serum"
-group <- "ESSENTIAL"
+group <- "ESSENTIAL2"
 metals <- metal_groups[[matrix]][[group]]
 
 ##Select the model to be runned, model1 includes main covariates while model2 includes comorbilities.
@@ -143,7 +145,7 @@ knots=75
 knots_name = paste0("knots", knots)
 assign(knots_name, fields::cover.design(lnmixture_z, nd = knots)$design)
 
-save(list = knots_name, file=paste0("knots/",group,"_ENRICA_",outcome_name,"_knots",knots,".RData"))
+#save(list = knots_name, file=paste0("knots/",group,"_ENRICA_",outcome_name,"_knots",knots,".RData"))
 
 ################################################
 ###         Fit Models                       ###
@@ -429,7 +431,7 @@ ggsave(paste("figures/interaction",outcome_name, matrix, group, paste0(model,".p
 
 
 #Save PDF with the relevant plots and PIPs
-pdf(paste(paste0("plots/",matrix,"/", group), "BKMR_ENRICA", outcome_name, model, ".pdf", sep = "_"))
+pdf(paste(paste0("plots/",matrix,"/", group), "BKMR_ENRICA", outcome_name, model,paste0(iter, ".pdf"), sep = "_"))
 
 pips
 TracePlot(fit = modeltoplot, par = "beta", sel = sel, ylab = expression(beta))

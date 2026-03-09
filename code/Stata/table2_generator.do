@@ -3,12 +3,11 @@ cd "`root'\data"
 
 use "bd_metales_deteriorommii.dta", replace
 
-
+drop if missing(ewgsop2_strength_gripw0, ewgsop2_strength_chairw0, calfcircumf_dicotw0, ewgsop2_perform_sppbw0, ewgsop2_perform_velw0, sarcopenia4) //No physical examen was performed
 drop if missing(w17vis_enf) //No blood sample was extracted
 drop if missing(Al, Co, Cr, Cu, Fe, Mg, Mn, Mo, Ni, Pb, Se, V, Zn)
 drop if missing(w17sexo, edadw0, w17fuma, w17educa_3cat, w17imc3, alcohol4, w17xmedas, w17modvigpa_mets)
 drop if w17IR_DEGREES==. | w17IR_DEGREES>=5 //We drop patients with severe kidney chronic disease or missing as we cannot trust those measurements
-drop if missing(ewgsop2_strength_gripw0, ewgsop2_strength_chairw0, calfcircumf_dicotw0, ewgsop2_perform_sppbw0, ewgsop2_perform_velw0, sarcopenia4)
 
 tempname table2
 
@@ -34,9 +33,11 @@ post `table2' ("") ("OR (95% CI)") ("P-value")  ("OR (95% CI)") ("P-value")  ("O
 foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn {
 	capture drop log`var' log`var'4
 	gen log`var'=log(`var')
-	xtile log`var'4 = log`var', nq(4)	
+	xtile log`var'4 = log`var', nq(4)
+	quietly sum log`var', det
+	capture gen log`var'_iqr = log`var'/(r(p75)-r(p25))
 	
-	*Here we spcifiy the desired outcomes to be evaluated. In case of needing to check any other outcome, add the it to the for loop on line 43 and a custom name to outcome_names in the same position
+	*Here we spcifiy the desired outcomes to be evaluated. In case of needing to check any other outcome, add it to the for loop on line 43 and a custom name to outcome_names in the same position
 	local outcomes grip ///
                      chair ///
                      calf ///
@@ -137,6 +138,30 @@ foreach var in Al Co Cr Cu Fe Mg Mn Mo Ni Pb Se V Zn {
 	}
 	
 	post `table2' ("P for trend") ("") ("`pt_grip'")  ("") ("`pt_chair'")  ("") ("`pt_calf'") ("") ("`pt_sppb'")  ("") ("`pt_vel'")  ("") ("`pt_sarcopenia'")
+	
+	//IQR
+	local i = 1
+	
+	foreach outcome_var in ewgsop2_strength_gripw0 ewgsop2_strength_chairw0 calfcircumf_dicotw0 ewgsop2_perform_sppbw0 ewgsop2_perform_velw0 sarcopenia2{
+		local outcome : word `i' of `outcomes'
+		logistic `outcome_var' log`var'_iqr w17sexo edadw0 w17fuma w17educa_3cat w17imc3 medas4 alcohol4 pa4
+		matrix b = r(table)
+		
+		local iqr_or : di %4.2f b[1,1]
+		local iqr_ll : di %4.2f b[5,1]
+		local iqr_ul : di %4.2f b[6,1]
+		local iqr_`outcome' = "`iqr_or' (`iqr_ll'-`iqr_ul')"
+		
+		local p_iqr_`outcome' : di %4.3f b[4,1]
+		if `p_iqr_`outcome'' == 0.000 {
+			local p_iqr_`outcome' "<0.001"
+		}
+		
+		local i = `i'+1
+	}
+	
+	post `table2' ("IQR") ("`iqr_grip'") ("`p_iqr_grip'")  ("`iqr_chair'") ("`p_iqr_chair'") ("`iqr_calf'") ("`p_iqr_calf'") ("`iqr_sppb'") ("`p_iqr_sppb'")  ("`iqr_vel'") ("`p_iqr_vel'") ("`iqr_sarcopenia'") ("`p_iqr_sarcopenia'")
+
 	
 }
 

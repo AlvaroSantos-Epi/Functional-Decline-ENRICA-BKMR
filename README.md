@@ -30,13 +30,13 @@ The BKMR analyses were conducted in \*\*RStudio\*\*, while descriptive analyses 
 
 \- `code/R`: R script (`.R`) for BKMR. This script is flexible — edit parameters as needed for each outcome, matrix, mixture and model.
 
-\- `fit_models`: Stored BKMR model objects.
+\- `fit\_models`: Stored BKMR model objects.
 
 \- `knots`: Knot matrices used for BKMR models.
 
 \- `plots`: PDFs containing plots and other relevant outputs.
 
-\- `saved_models`: Models generated for plotting purposes.
+\- `saved\_model`: Models generated for plotting purposes.
 
 \- `tables`: Tables with sociodemographic analyses by outcome and multivariate logistic regressions by metal for each outcome.
 
@@ -52,8 +52,11 @@ The BKMR analyses were conducted in \*\*RStudio\*\*, while descriptive analyses 
 
 
 
-> \*\*Note:\*\* These steps assume that Git is already installed and configured.
+> [!NOTE]
+> These steps assume that Git is already installed and configured.
 
+> [!NOTE]
+> Data is not included in the repository. It will be available upon request.
 
 
 
